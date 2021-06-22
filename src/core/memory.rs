@@ -1,9 +1,11 @@
+//! COMET2のメモリは1語16bitが65536語の1048576bitの128KiB。
+
 use crate::utils::to_pairs::ToPairBlanket;
 use std::io;
 
 use super::machine::MachineStepError;
-#[derive(Debug)]
-pub struct Memory(pub [i16; 4096]);
+#[derive(Debug, Clone)]
+pub struct Memory(pub [i16; 65536]);
 
 pub struct MemoryInitError(pub io::Error);
 
@@ -15,10 +17,10 @@ fn u8u8_2_u16((x, y): (u8, u8)) -> i16 {
 
 impl Memory {
     pub fn load_program(stream: &mut impl io::Read) -> Result<Memory, MemoryInitError> {
-        let mut mem = [0; 4096];
+        let mut mem = [0; 65536];
 
         let mut buf = Vec::new();
-        let rea = stream.read_to_end(&mut buf).map_err(MemoryInitError)?;
+        stream.read_to_end(&mut buf).map_err(MemoryInitError)?;
         buf.into_iter()
             .to_pairs()
             .map(u8u8_2_u16)

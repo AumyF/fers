@@ -1,12 +1,13 @@
 use super::{
     memory::{Memory, MemoryInitError},
-    operations::TwoLengthOperation,
+    operations,
+    operations::Operations,
 };
 use std::{error, fmt, io};
 
 #[derive(Debug)]
 pub enum MachineStepError {
-    UnknownOperation(u16),
+    UnknownOperation(operations::OperationExecutionError),
     MemoryOutOfIndex(usize),
 }
 
@@ -47,20 +48,8 @@ pub struct Machine {
     of: bool,
     sf: bool,
     zf: bool,
-    second_word: Option<Box<dyn TwoLengthOperation>>,
+    second_word: Option<Operations>,
 }
-
-/// TODO remove
-#[derive(Debug)]
-struct UnknownOperationError(u16);
-
-impl fmt::Display for UnknownOperationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Unknown operation: {}", self.0)
-    }
-}
-
-impl error::Error for UnknownOperationError {}
 
 impl Machine {
     pub fn init(stream: &mut impl io::Read) -> Result<Machine, MachineInitError> {
@@ -79,12 +68,8 @@ impl Machine {
         })
     }
     /// ワードを読んで命令を実行する
-    fn exec(self, word: u16) -> Result<Machine, UnknownOperationError> {
-        match word & 0x1100 {
-            0 => Ok(Machine { ..self }), // NOP
-            0x1000 => Ok(Machine { ..self }),
-            e => Err(UnknownOperationError(e)),
-        }
+    fn exec(self, word: u16) -> Result<Machine, operations::OperationExecutionError> {
+        Operations::new(word).exec(self)
     }
 
     fn is_register_valid(num: u16) {}
@@ -103,13 +88,58 @@ impl Machine {
     pub fn clock(self) -> Result<Machine, MachineStepError> {
         use MachineStepError::*;
         let word = self.mem.get(self.pr as usize)?;
-        let machine = self
-            .exec(word as u16)
-            .map_err(|UnknownOperationError(o)| UnknownOperation(o))?;
+        let machine = self.exec(word as u16).map_err(|e| UnknownOperation(e))?;
 
         Ok(Machine {
             pr: machine.pr + 16,
             ..machine
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct RegisterOutOfIndexError {
+    index: u16,
+}
+
+impl fmt::Display for RegisterOutOfIndexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Range of general registers is 0-7 but got: {}",
+            self.index
+        )
+    }
+}
+
+impl Machine {
+    pub fn get_gr(&self, index: u16) -> Result<&i16, RegisterOutOfIndexError> {
+        self.gr
+            .get(index as usize)
+            .ok_or(RegisterOutOfIndexError { index })
+    }
+
+    pub fn manipulate_gr<F>(
+        &self,
+        r1_index: u16,
+        r2_index: u16,
+        f: F,
+    ) -> Result<Machine, RegisterOutOfIndexError>
+    where
+        F: FnOnce(i16, i16) -> i16,
+    {
+        let r1_value = self.get_gr(r1_index)?;
+        let r2_value = self.get_gr(r2_index)?;
+
+        let mut gr = self.gr.clone();
+
+        gr[r1_index as usize] = f(*r1_value, *r2_value);
+
+        Ok(Machine {
+            gr,
+            mem: self.mem.clone(),
+            second_word: self.second_word.clone(),
+            ..*self
         })
     }
 }

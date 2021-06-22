@@ -1,6 +1,5 @@
 use std::error::Error;
 mod core;
-mod front;
 mod lib;
 mod utils;
 
