@@ -1,6 +1,7 @@
 //! 命令語の解釈とその処理の実行
 
-use super::machine::{Machine, RegisterOutOfIndexError};
+use super::errors::{OperationExecutionError, RegisterOutOfIndexError};
+use super::machine::Machine;
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -50,23 +51,6 @@ struct OperationNotDefined {
 struct TwoRegisters {
     r1: u16,
     r2: u16,
-}
-
-#[derive(Debug)]
-pub enum OperationExecutionError {
-    RegisterOutOfIndex(RegisterOutOfIndexError),
-}
-
-impl fmt::Display for OperationExecutionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                OperationExecutionError::RegisterOutOfIndex(r) => r,
-            }
-        )
-    }
 }
 
 mod test {

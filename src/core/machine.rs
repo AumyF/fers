@@ -1,44 +1,7 @@
-use super::{
-    memory::{Memory, MemoryInitError},
-    operations,
-    operations::Operations,
-};
+use super::errors::OperationExecutionError;
+use super::errors::{MachineInitError, MachineStepError, MemoryInitError, RegisterOutOfIndexError};
+use super::{memory::Memory, operations, operations::Operations};
 use std::{error, fmt, io};
-
-#[derive(Debug)]
-pub enum MachineStepError {
-    UnknownOperation(operations::OperationExecutionError),
-    MemoryOutOfIndex(usize),
-}
-
-impl fmt::Display for MachineStepError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use MachineStepError::*;
-        match self {
-            MemoryOutOfIndex(n) => write!(f, "Memory out of index: {}", n),
-            UnknownOperation(n) => write!(f, "Unknown operation: {}", n),
-        }
-    }
-}
-impl error::Error for MachineStepError {}
-
-#[derive(Debug)]
-pub enum MachineInitError {
-    IOError(io::Error),
-    OutOfMemory(usize),
-}
-
-impl fmt::Display for MachineInitError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use MachineInitError::*;
-        match self {
-            IOError(e) => e.fmt(f),
-            OutOfMemory(size) => write!(f, "Out of memory: {}", size),
-        }
-    }
-}
-
-impl error::Error for MachineInitError {}
 
 pub struct Machine {
     pub mem: Memory,
@@ -68,7 +31,7 @@ impl Machine {
         })
     }
     /// ワードを読んで命令を実行する
-    fn exec(self, word: u16) -> Result<Machine, operations::OperationExecutionError> {
+    fn exec(self, word: u16) -> Result<Machine, OperationExecutionError> {
         Operations::new(word).exec(self)
     }
 
@@ -94,21 +57,6 @@ impl Machine {
             pr: machine.pr + 16,
             ..machine
         })
-    }
-}
-
-#[derive(Debug)]
-pub struct RegisterOutOfIndexError {
-    index: u16,
-}
-
-impl fmt::Display for RegisterOutOfIndexError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Range of general registers is 0-7 but got: {}",
-            self.index
-        )
     }
 }
 
