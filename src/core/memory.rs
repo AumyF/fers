@@ -3,9 +3,9 @@
 use crate::utils::to_pairs::ToPairBlanket;
 use std::io;
 
-fn u8u8_2_u16((x, y): (u8, u8)) -> i16 {
-    let x = x as i16;
-    let y = y as i16;
+fn u8u8_2_u16((x, y): (u8, u8)) -> u16 {
+    let x = x as u16;
+    let y = y as u16;
     (x << 8) + y
 }
 
@@ -16,7 +16,7 @@ fn test_u8u8_2_u16() {
 }
 
 #[derive(Debug, Clone)]
-pub struct Memory(pub [i16; 65536]);
+pub struct Memory(pub [u16; 65536]);
 
 #[derive(Debug, thiserror::Error)]
 pub enum LoadProgramError {
@@ -47,7 +47,7 @@ pub enum GetError {
 }
 
 impl Memory {
-    pub fn get(&self, idx: usize) -> Result<i16, GetError> {
+    pub fn get(&self, idx: usize) -> Result<u16, GetError> {
         let Memory(raw) = *self;
         if idx < raw.len() {
             Ok(raw[idx])
