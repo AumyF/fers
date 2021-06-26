@@ -6,11 +6,22 @@ pub enum Operations {
     Load2,
     Store,
     LoadAddress,
-    Load1,
+    /// r1にr2をセットする
+    Load1(TwoRegisters),
+
+    AddArithmetic2,
+    SubtractArithmetic2,
+    AddLogical2,
+    SubtratLogical2,
+
     AddArithmetic1(TwoRegisters),
-    SubtractArithmetic,
-    AddLogical,
-    SubtratLogical,
+    SubtractArithmetic1(TwoRegisters),
+    AddLogical1(TwoRegisters),
+    SubtratLogical1(TwoRegisters),
+
+    And1(TwoRegisters),
+    Or1(TwoRegisters),
+    Xor1(TwoRegisters),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -25,8 +36,9 @@ impl Operations {
     pub fn new(word: u16) -> Result<Operations, NewError> {
         use Operations::*;
         Ok(match word & 0xff00 {
-            0 => NoOperation, // NOP
-            0x2400 => AddArithmetic1(TwoRegisters::new(word)?),
+            0 => NoOperation,                                   // NOP
+            0x1400 => Load1(TwoRegisters::new(word)?),          // LD
+            0x2400 => AddArithmetic1(TwoRegisters::new(word)?), // ADDA
             e => Err(NewError::OperationNotDefined(e))?,
         })
     }
@@ -76,4 +88,6 @@ mod test {
 
     //     Ok(())
     // }
+
+   
 }
