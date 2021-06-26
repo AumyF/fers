@@ -17,6 +17,8 @@ pub enum Operations {
 pub enum NewError {
     #[error("Operation not defined for word {0:X}")]
     OperationNotDefined(u16),
+    #[error("{0}")]
+    RegisterOutOfIndex(#[from] RegisterOutOfIndex),
 }
 
 impl Operations {
@@ -24,10 +26,7 @@ impl Operations {
         use Operations::*;
         Ok(match word & 0xff00 {
             0 => NoOperation, // NOP
-            0x2400 => AddArithmetic1(TwoRegisters {
-                r1: (word & 0x00f0) >> 1,
-                r2: (word & 0x000f),
-            }),
+            0x2400 => AddArithmetic1(TwoRegisters::new(word)?),
             e => Err(NewError::OperationNotDefined(e))?,
         })
     }
@@ -42,10 +41,16 @@ pub struct TwoRegisters {
     r2: u16,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0:X}{1:X} is out of range for general register")]
+pub struct RegisterOutOfIndex(u16, u16);
+
 impl TwoRegisters {
-    fn new(r1: u16, r2: u16) -> Result<TwoRegisters, (u16, u16)> {
+    fn new(word: u16) -> Result<TwoRegisters, RegisterOutOfIndex> {
+        let r1 = (word & 0x00f0) >> 1;
+        let r2 = word & 0x000f;
         if r1 > 7 || r2 > 7 {
-            Err((r1, r2))
+            Err(RegisterOutOfIndex(r1, r2))
         } else {
             Ok(TwoRegisters { r1, r2 })
         }
