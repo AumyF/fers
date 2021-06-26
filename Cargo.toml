@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 itertools = "0.10.1"
+anyhow = "1.0.41"
+thiserror = "1.0.25"

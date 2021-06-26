@@ -1,9 +1,5 @@
 //! 命令語の解釈とその処理の実行
 
-use super::errors::{OperationExecutionError, RegisterOutOfIndexError};
-use super::machine::Machine;
-use std::fmt;
-
 #[derive(Debug, Clone)]
 pub enum Operations {
     NoOperation,
@@ -17,40 +13,47 @@ pub enum Operations {
     SubtratLogical,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum NewError {
+    #[error("Operation not defined for word {0:X}")]
+    OperationNotDefined(u16),
+}
+
 impl Operations {
-    // TODO 返り値はResultにする
-    pub fn new(word: u16) -> Operations {
+    pub fn new(word: u16) -> Result<Operations, NewError> {
         use Operations::*;
-        match word & 0xff00 {
+        Ok(match word & 0xff00 {
             0 => NoOperation, // NOP
             0x2400 => AddArithmetic1(TwoRegisters {
                 r1: (word & 0x00f0) >> 1,
                 r2: (word & 0x000f),
             }),
-            e => unimplemented!(),
-        }
-    }
-
-    // TODO &Machineにする
-    pub fn exec(&self, machine: Machine) -> Result<Machine, OperationExecutionError> {
-        Ok(match *self {
-            Operations::NoOperation => machine,
-            Operations::AddArithmetic1(TwoRegisters { r1, r2 }) => machine
-                .manipulate_gr(r1, r2, |r1, r2| r1 + r2)
-                .or_else(|e| Err(OperationExecutionError::RegisterOutOfIndex(e)))?,
-            _ => unimplemented!(),
+            e => Err(NewError::OperationNotDefined(e))?,
         })
     }
 }
 
-struct OperationNotDefined {
-    word: u16,
-}
-
+/// GRのインデックスのペア。R1 <- f (R1, R2) みたいな演算で使う。
+/// `new` で範囲内 (R <= 7) であることを保証しているので
+/// これを使うときは範囲外アクセスを気にして `Result` を使う必要はない。
 #[derive(Debug, Clone, Copy)]
-struct TwoRegisters {
+pub struct TwoRegisters {
     r1: u16,
     r2: u16,
+}
+
+impl TwoRegisters {
+    fn new(r1: u16, r2: u16) -> Result<TwoRegisters, (u16, u16)> {
+        if r1 > 7 || r2 > 7 {
+            Err((r1, r2))
+        } else {
+            Ok(TwoRegisters { r1, r2 })
+        }
+    }
+    pub fn get_pair(&self) -> (&u16, &u16) {
+        let Self { r1, r2 } = self;
+        (r1, r2)
+    }
 }
 
 mod test {

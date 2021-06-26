@@ -1,7 +1,5 @@
 //! COMET2のメモリは1語16bitが65536語の1048576bitの128KiB。
 
-use super::errors::MachineStepError;
-use super::errors::MemoryInitError;
 use crate::utils::to_pairs::ToPairBlanket;
 use std::io;
 
@@ -20,12 +18,18 @@ fn test_u8u8_2_u16() {
 #[derive(Debug, Clone)]
 pub struct Memory(pub [i16; 65536]);
 
+#[derive(Debug, thiserror::Error)]
+pub enum LoadProgramError {
+    #[error("{0}")]
+    IOError(#[from] io::Error),
+}
+
 impl Memory {
-    pub fn load_program(stream: &mut impl io::Read) -> Result<Memory, MemoryInitError> {
+    pub fn load_program(stream: &mut impl io::Read) -> Result<Memory, LoadProgramError> {
         let mut mem = [0; 65536];
 
         let mut buf = Vec::new();
-        stream.read_to_end(&mut buf).map_err(MemoryInitError)?;
+        stream.read_to_end(&mut buf)?;
         buf.into_iter()
             .to_pairs()
             .map(u8u8_2_u16)
@@ -34,13 +38,21 @@ impl Memory {
 
         Ok(Memory(mem))
     }
+}
 
-    pub fn get(&self, idx: usize) -> Result<i16, MachineStepError> {
+#[derive(Debug, thiserror::Error)]
+pub enum GetError {
+    #[error("GetError: {0} is out of index of memory")]
+    OutOfIndex(usize),
+}
+
+impl Memory {
+    pub fn get(&self, idx: usize) -> Result<i16, GetError> {
         let Memory(raw) = *self;
         if idx < raw.len() {
             Ok(raw[idx])
         } else {
-            Err(MachineStepError::MemoryOutOfIndex(idx))
+            Err(GetError::OutOfIndex(idx))
         }
     }
 }

@@ -1,8 +1,8 @@
-use super::errors::OperationExecutionError;
-use super::errors::{MachineInitError, MachineStepError, MemoryInitError, RegisterOutOfIndexError};
+use super::memory;
 use super::{memory::Memory, operations, operations::Operations};
-use std::{error, fmt, io};
+use std::io;
 
+#[derive(Debug, Clone)]
 pub struct Machine {
     pub mem: Memory,
     gr: [i16; 8],
@@ -14,10 +14,15 @@ pub struct Machine {
     second_word: Option<Operations>,
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum MachineInitError {
+    #[error("{0}")]
+    MemoryInitFailed(#[from] memory::LoadProgramError),
+}
+
 impl Machine {
     pub fn init(stream: &mut impl io::Read) -> Result<Machine, MachineInitError> {
-        let mem = Memory::load_program(stream)
-            .map_err(|MemoryInitError(e)| MachineInitError::IOError(e))?;
+        let mem = Memory::load_program(stream)?;
         Ok(Machine {
             mem,
             gr: [0; 8],
@@ -30,12 +35,30 @@ impl Machine {
             second_word: None,
         })
     }
-    /// ワードを読んで命令を実行する
-    fn exec(self, word: u16) -> Result<Machine, OperationExecutionError> {
-        Operations::new(word).exec(self)
-    }
+}
 
-    fn is_register_valid(num: u16) {}
+#[derive(Debug, thiserror::Error)]
+pub enum ExecError {
+    #[error("{0}")]
+    OperationNotDefined(#[from] operations::NewError),
+}
+
+impl Machine {
+    fn exec(&self, word: u16) -> Result<Machine, ExecError> {
+        use Operations::*;
+
+        let operation = Operations::new(word)?;
+        Ok(match operation {
+            NoOperation => self.clone(),
+            AddArithmetic1(two_registers) => self.manipulate_gr(two_registers, |r1, r2| r1 + r2),
+
+            _ => unimplemented!(),
+        })
+    }
+}
+
+impl Machine {
+    /// ワードを読んで命令を実行する
 
     pub fn mem_info(&self) -> String {
         let Memory(mem) = self.mem;
@@ -47,11 +70,20 @@ impl Machine {
     pub fn pr_at(&self) -> String {
         format!("{:X}", self.mem.get(self.pr as usize).unwrap() as u16)
     }
+}
 
-    pub fn clock(self) -> Result<Machine, MachineStepError> {
-        use MachineStepError::*;
+#[derive(Debug, thiserror::Error)]
+pub enum StepError {
+    #[error("{0}")]
+    ExecError(#[from] ExecError),
+    #[error("{0}")]
+    MemoryGetError(#[from] memory::GetError),
+}
+
+impl Machine {
+    pub fn clock(self) -> Result<Machine, StepError> {
         let word = self.mem.get(self.pr as usize)?;
-        let machine = self.exec(word as u16).map_err(|e| UnknownOperation(e))?;
+        let machine = self.exec(word as u16)?;
 
         Ok(Machine {
             pr: machine.pr + 16,
@@ -61,33 +93,33 @@ impl Machine {
 }
 
 impl Machine {
-    pub fn get_gr(&self, index: u16) -> Result<&i16, RegisterOutOfIndexError> {
-        self.gr
-            .get(index as usize)
-            .ok_or(RegisterOutOfIndexError { index })
+    pub fn get_gr(&self, index: u16) -> Result<&i16, u16> {
+        self.gr.get(index as usize).ok_or(index)
     }
 
-    pub fn manipulate_gr<F>(
-        &self,
-        r1_index: u16,
-        r2_index: u16,
-        f: F,
-    ) -> Result<Machine, RegisterOutOfIndexError>
+    /// `TwoRegisters` を使ってGRにアクセスする。
+    fn get_grs(&self, two_registers: operations::TwoRegisters) -> (&i16, &i16) {
+        let (&r1, &r2) = two_registers.get_pair();
+        (self.get_gr(r1).unwrap(), self.get_gr(r2).unwrap())
+    }
+
+    pub fn manipulate_gr<F>(&self, two_registers: operations::TwoRegisters, f: F) -> Machine
     where
         F: FnOnce(i16, i16) -> i16,
     {
-        let r1_value = self.get_gr(r1_index)?;
-        let r2_value = self.get_gr(r2_index)?;
+        let (&r1_index, _) = two_registers.get_pair();
+
+        let (r1_value, r2_value) = self.get_grs(two_registers);
 
         let mut gr = self.gr.clone();
 
         gr[r1_index as usize] = f(*r1_value, *r2_value);
 
-        Ok(Machine {
+        Machine {
             gr,
             mem: self.mem.clone(),
             second_word: self.second_word.clone(),
             ..*self
-        })
+        }
     }
 }
