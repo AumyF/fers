@@ -12,7 +12,7 @@ fn u8u8_2_u16((x, y): (u8, u8)) -> u16 {
 #[test]
 fn test_u8u8_2_u16() {
     assert_eq!(u8u8_2_u16((0x7e, 0x80)), 0x7e80);
-    assert_eq!(u8u8_2_u16((0xff, 0xff)), 0x7fff);
+    assert_eq!(u8u8_2_u16((0xff, 0xff)), 0xffff);
 }
 
 #[derive(Debug, Clone)]

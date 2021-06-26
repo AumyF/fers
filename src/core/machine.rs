@@ -5,9 +5,9 @@ use std::io;
 #[derive(Debug, Clone)]
 pub struct Machine {
     pub mem: Memory,
-    gr: [i16; 8],
-    sp: i16,
-    pr: i16,
+    gr: [u16; 8],
+    sp: u16,
+    pr: u16,
     of: bool,
     sf: bool,
     zf: bool,
@@ -93,19 +93,19 @@ impl Machine {
 }
 
 impl Machine {
-    pub fn get_gr(&self, index: u16) -> Result<&i16, u16> {
+    pub fn get_gr(&self, index: u16) -> Result<&u16, u16> {
         self.gr.get(index as usize).ok_or(index)
     }
 
     /// `TwoRegisters` を使ってGRにアクセスする。
-    fn get_grs(&self, two_registers: operations::TwoRegisters) -> (&i16, &i16) {
+    fn get_grs(&self, two_registers: operations::TwoRegisters) -> (&u16, &u16) {
         let (&r1, &r2) = two_registers.get_pair();
         (self.get_gr(r1).unwrap(), self.get_gr(r2).unwrap())
     }
 
     pub fn manipulate_gr<F>(&self, two_registers: operations::TwoRegisters, f: F) -> Machine
     where
-        F: FnOnce(i16, i16) -> i16,
+        F: FnOnce(u16, u16) -> u16,
     {
         let (&r1_index, _) = two_registers.get_pair();
 
