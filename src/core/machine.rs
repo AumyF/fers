@@ -1,4 +1,5 @@
 use super::memory;
+use super::operations::TwoWordOperations;
 use super::{memory::Memory, operations, operations::Operations};
 use std::ops::{BitAnd, BitOr, BitXor};
 use std::rc::Rc;
@@ -18,7 +19,7 @@ pub struct Machine {
     sf: bool,
     zf: bool,
     /// 前の命令。アドレス関係で2ワード読む場合に前の命令が何だったか保持するのに使う
-    previous_word: Option<Operations>,
+    previous_word: Option<TwoWordOperations>,
 }
 
 impl Clone for Machine {
@@ -68,14 +69,28 @@ impl Machine {
 
         // 2語目
         if let Some(previous) = self.previous_word {
+            use TwoWordOperations::*;
             return Ok(match previous {
-                Load2(tr) => {
+                Load(tr) => {
                     // TODO 処理が分散してて汚い
                     let (_, &index_gr_num) = tr.get_pair();
 
                     let adr = word + self.gr[index_gr_num as usize];
                     self.load2(tr, adr)
                 }
+                Push(tr) => {
+                    let (_, &index) = tr.get_pair();
+                    let sp = self.sp - 1;
+                    let mut mem = self.mem.0.clone();
+                    mem[self.sp as usize] = word + self.gr[index as usize];
+                    let mem = Rc::new(Memory(mem));
+                    Machine {
+                        sp,
+                        mem,
+                        ..self.clone()
+                    }
+                }
+
                 Call(tr) => {
                     let (_, &index_gr_num) = tr.get_pair();
                     let adr = word + self.gr[index_gr_num as usize];
@@ -96,7 +111,14 @@ impl Machine {
             And1(tr) => self.and_1(tr),
             Or1(two_registers) => self.or_1(two_registers),
             Xor1(tr) => self.xor_1(tr),
-
+            Pop(tr) => {
+                let r = self.mem.get(self.sp).unwrap();
+                let sp = self.sp + 1;
+                Machine {
+                    sp,
+                    ..self.set_gene(tr, r)
+                }
+            }
             Return => self.return_(),
 
             _ => unimplemented!(),

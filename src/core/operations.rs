@@ -1,18 +1,46 @@
 //! 命令語の解釈とその処理の実行
 
 #[derive(Debug, Clone, Copy)]
+pub enum TwoWordOperations {
+    Load(TwoRegisters),
+    Store(TwoRegisters),
+    LoadAddress(TwoRegisters),
+
+    AddArithmetic(TwoRegisters),
+    SubtractArithmetic(TwoRegisters),
+    AddLogical(TwoRegisters),
+    SubtractLogical(TwoRegisters),
+
+    And(TwoRegisters),
+    Or(TwoRegisters),
+    Xor(TwoRegisters),
+
+    CompareArithmetic(TwoRegisters),
+    CompareLogical(TwoRegisters),
+
+    ShiftLeftArithmetic(TwoRegisters),
+    ShiftLeftLogical(TwoRegisters),
+    ShiftRightArithmetic(TwoRegisters),
+    ShiftRightLogical(TwoRegisters),
+
+    JumpOnMinus(TwoRegisters),
+    JumpOnNonZero(TwoRegisters),
+    JumpOnZero(TwoRegisters),
+    UnconditionalJump(TwoRegisters),
+    JumpOnPlus(TwoRegisters),
+    JumpOnOverflow(TwoRegisters),
+
+    Push(TwoRegisters),
+
+    Call(TwoRegisters),
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Operations {
     NoOperation,
-    Load2(TwoRegisters),
-    Store,
-    LoadAddress,
+
     /// r1にr2をセットする
     Load1(TwoRegisters),
-
-    AddArithmetic2,
-    SubtractArithmetic2,
-    AddLogical2,
-    SubtractLogical2,
 
     AddArithmetic1(TwoRegisters),
     SubtractArithmetic1(TwoRegisters),
@@ -23,41 +51,12 @@ pub enum Operations {
     Or1(TwoRegisters),
     Xor1(TwoRegisters),
 
-    Call(TwoRegisters),
+    CompareArithmetic1(TwoRegisters),
+    CompareLogical1(TwoRegisters),
+
+    Pop(TwoRegisters),
+
     Return,
-}
-
-pub enum NumericLogical1 {
-    Add(TwoRegisters),
-    Subtract(TwoRegisters),
-}
-
-impl NumericLogical1 {
-    fn eval(&self) -> Box<dyn FnOnce(u16, u16) -> Option<u16>> {
-        use NumericLogical1::*;
-        Box::new(match *self {
-            Add(grs) => u16::checked_add,
-            Subtract(_) => u16::checked_sub,
-        })
-    }
-}
-
-pub enum LogicalBitwise1 {
-    And(TwoRegisters),
-    Or(TwoRegisters),
-    Xor(TwoRegisters),
-}
-
-impl LogicalBitwise1 {
-    fn eval(&self) -> Box<dyn FnOnce(u16, u16) -> u16> {
-        use std::ops;
-        use LogicalBitwise1::*;
-        Box::new(match *self {
-            And(_) => ops::BitAnd::bitand,
-            Or(_) => ops::BitOr::bitor,
-            Xor(_) => ops::BitXor::bitxor,
-        })
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -75,8 +74,7 @@ impl Operations {
         // TODO オペランドの形違いに対応する
         let two_registers = TwoRegisters::new(word);
         Ok(match word & 0xff00 {
-            0 => NoOperation, // NOP
-            0x1000 => Load2(two_registers?),
+            0 => NoOperation,                         // NOP
             0x1400 => Load1(two_registers?),          // LD
             0x2400 => AddArithmetic1(two_registers?), // ADDA
             0x2500 => SubtractArithmetic1(two_registers?),
@@ -87,8 +85,51 @@ impl Operations {
             0x3500 => Or1(two_registers?),
             0x3600 => Xor1(two_registers?),
 
-            0x8000 => Call(two_registers?),
+            0x7100 => Pop(two_registers?),
+
             0x8100 => Return,
+
+            e => Err(NewError::OperationNotDefined(e))?,
+        })
+    }
+}
+
+impl TwoWordOperations {
+    pub fn new(word: u16) -> Result<TwoWordOperations, NewError> {
+        use TwoWordOperations::*;
+
+        let two_registers = TwoRegisters::new(word)?;
+        Ok(match word & 0xff00 {
+            0x1000 => Load(two_registers),
+            0x1100 => Store(two_registers),
+            0x1200 => LoadAddress(two_registers),
+
+            0x2000 => AddArithmetic(two_registers),
+            0x2100 => SubtractArithmetic(two_registers),
+            0x2200 => AddLogical(two_registers),
+            0x2300 => SubtractLogical(two_registers),
+
+            0x3000 => And(two_registers),
+            0x3100 => Or(two_registers),
+            0x3200 => Xor(two_registers),
+
+            0x4000 => CompareArithmetic(two_registers),
+            0x4100 => CompareLogical(two_registers),
+
+            0x5000 => ShiftLeftArithmetic(two_registers),
+            0x5100 => ShiftLeftLogical(two_registers),
+            0x5200 => ShiftRightArithmetic(two_registers),
+            0x5300 => ShiftRightLogical(two_registers),
+
+            0x6100 => JumpOnMinus(two_registers),
+            0x6200 => JumpOnNonZero(two_registers),
+            0x6300 => JumpOnZero(two_registers),
+            0x6400 => UnconditionalJump(two_registers),
+            0x6500 => JumpOnPlus(two_registers),
+            0x6600 => JumpOnOverflow(two_registers),
+
+            0x7000 => Push(two_registers),
+            0x8000 => Call(two_registers),
 
             e => Err(NewError::OperationNotDefined(e))?,
         })
