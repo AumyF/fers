@@ -46,7 +46,7 @@ impl Machine {
             mem,
             gr: [0; 8],
             sp: STACK_SIZE as u16,
-            pr: 0,
+            pr: STACK_SIZE as u16,
             of: false,
             sf: false,
             zf: false,
@@ -238,11 +238,9 @@ impl Machine {
     }
 }
 
-#[test]
-fn test() -> Result<(), Box<dyn std::error::Error>> {
-    let mut cursor = io::Cursor::new(vec![0x0]);
-    let machine = Machine::init(&mut cursor)?;
-    let machine = machine.clock()?;
-    println!("{}", machine.mem_info());
-    Ok(())
-}
+// #[test]
+// fn test() -> Result<(), Box<dyn std::error::Error>> {
+//     let machine = Machine::init(&mut io::Cursor::new(vec![0x24]));
+
+//     Ok(())
+// }
