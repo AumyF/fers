@@ -1,3 +1,5 @@
+use itertools::Either;
+
 use super::memory;
 use super::operations::TwoWordOperations;
 use super::register::GeneralRegister;
@@ -80,6 +82,7 @@ impl Machine {
                     self.load2(tr, adr)
                 }
                 Push(tr) => {
+                    // TODO 未整理
                     let (_, offset) = self.gr.get(tr);
                     let (_, &index) = tr.get_pair();
                     let sp = self.sp - 1;
@@ -103,27 +106,31 @@ impl Machine {
         }
 
         // 1語目
-        let operation = Operations::new(word)?;
-
-        Ok(match operation {
-            NoOperation => self.clone(),
-            // AddArithmetic1(two_registers) => self.manipulate_gr(two_registers, |r1, r2| r1 + r2),
-            AddLogical1(two_registers) => self.add_logical_1(two_registers),
-            SubtractLogical1(tr) => self.subtract_logical_1(tr),
-            And1(tr) => self.and_1(tr),
-            Or1(two_registers) => self.or_1(two_registers),
-            Xor1(tr) => self.xor_1(tr),
-            Pop(tr) => {
-                let r = self.mem.get(self.sp).unwrap();
-                let sp = self.sp + 1;
-                Machine {
-                    sp,
-                    ..self.mod_gr(tr, r)
+        Ok(match operations::ope(word)? {
+            Either::Left(o) => match o {
+                NoOperation => self.clone(),
+                // AddArithmetic1(two_registers) => self.manipulate_gr(two_registers, |r1, r2| r1 + r2),
+                AddLogical1(two_registers) => self.add_logical_1(two_registers),
+                SubtractLogical1(tr) => self.subtract_logical_1(tr),
+                And1(tr) => self.and_1(tr),
+                Or1(two_registers) => self.or_1(two_registers),
+                Xor1(tr) => self.xor_1(tr),
+                Pop(tr) => {
+                    let r = self.mem.get(self.sp).unwrap();
+                    let sp = self.sp + 1;
+                    Machine {
+                        sp,
+                        ..self.mod_gr(tr, r)
+                    }
                 }
-            }
-            Return => self.return_(),
+                Return => self.return_(),
 
-            _ => unimplemented!(),
+                _ => unimplemented!(),
+            },
+            Either::Right(t) => Machine {
+                previous_word: Some(t),
+                ..self.clone()
+            },
         })
     }
 }

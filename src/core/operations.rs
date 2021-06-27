@@ -1,5 +1,7 @@
 //! 命令語の解釈とその処理の実行
 
+use itertools::Either;
+
 #[derive(Debug, Clone, Copy)]
 pub enum TwoWordOperations {
     Load(TwoRegisters),
@@ -57,6 +59,10 @@ pub enum Operations {
     Pop(TwoRegisters),
 
     Return,
+}
+
+pub fn ope(word: u16) -> Result<Either<Operations, TwoWordOperations>, NewError> {
+    Ok(Operations::new(word).map_or(Either::Right(TwoWordOperations::new(word)?), Either::Left))
 }
 
 #[derive(Debug, thiserror::Error)]
