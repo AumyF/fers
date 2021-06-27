@@ -1,5 +1,6 @@
 //! COMET2のメモリは1語16bitが65536語の1048576bitの128KiB。
 
+use super::machine;
 use crate::utils::to_pairs::ToPairBlanket;
 use std::io;
 
@@ -15,7 +16,7 @@ fn test_u8u8_2_u16() {
     assert_eq!(u8u8_2_u16((0xff, 0xff)), 0xffff);
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct Memory(pub [u16; 65536]);
 
 #[derive(Debug, thiserror::Error)]
@@ -29,12 +30,14 @@ impl Memory {
         let mut mem = [0; 65536];
 
         let mut buf = Vec::new();
-        stream.read_to_end(&mut buf)?;
+        let bytes = stream.read_to_end(&mut buf)?;
         buf.into_iter()
             .to_pairs()
             .map(u8u8_2_u16)
             .enumerate()
-            .for_each(|(index, value)| mem[index] = value);
+            .for_each(|(index, value)| {
+                mem[index + machine::STACK_SIZE] = value;
+            });
 
         Ok(Memory(mem))
     }
@@ -47,12 +50,25 @@ pub enum GetError {
 }
 
 impl Memory {
-    pub fn get(&self, idx: usize) -> Result<u16, GetError> {
+    pub fn get(&self, index: u16) -> Result<u16, GetError> {
+        let index = index as usize;
         let Memory(raw) = *self;
-        if idx < raw.len() {
-            Ok(raw[idx])
+        if index < raw.len() {
+            Ok(raw[index])
         } else {
-            Err(GetError::OutOfIndex(idx))
+            Err(GetError::OutOfIndex(index))
         }
+    }
+    pub fn info(&self) -> String {
+        let mem = self.0;
+        let stack = &mem[..machine::STACK_SIZE];
+        let mem = &mem[machine::STACK_SIZE..machine::STACK_SIZE + 256];
+
+        format!(
+            "Stack: {:X?}\nMem: {:X?}\nlength: {}",
+            stack,
+            mem,
+            mem.len()
+        )
     }
 }

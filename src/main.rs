@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, thread::sleep, time::Duration};
 mod core;
 mod lib;
 mod utils;
@@ -6,18 +6,15 @@ mod utils;
 use crate::core::machine::Machine;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let mut code = std::fs::File::open("sample")?;
+    // let mut code = std::fs::File::open("sample")?;
+    let mut code = std::io::Cursor::new(vec![0x20, 0x01]);
+
     let machine = Machine::init(&mut code)?;
+    machine.clock()?;
 
-    let machine = machine
-        .clock()?
-        .clock()?
-        .clock()?
-        .clock()?
-        .clock()?
-        .clock()?;
-
-    println!("{}", machine.pr_at());
+    println!("{}", machine.r_info());
+    println!("{}", machine.mem.0[0]);
+    println!("{}", machine.mem.info());
     Ok(())
 }
 

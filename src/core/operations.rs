@@ -1,9 +1,9 @@
 //! 命令語の解釈とその処理の実行
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Operations {
     NoOperation,
-    Load2,
+    Load2(TwoRegisters),
     Store,
     LoadAddress,
     /// r1にr2をセットする
@@ -12,16 +12,52 @@ pub enum Operations {
     AddArithmetic2,
     SubtractArithmetic2,
     AddLogical2,
-    SubtratLogical2,
+    SubtractLogical2,
 
     AddArithmetic1(TwoRegisters),
     SubtractArithmetic1(TwoRegisters),
     AddLogical1(TwoRegisters),
-    SubtratLogical1(TwoRegisters),
+    SubtractLogical1(TwoRegisters),
 
     And1(TwoRegisters),
     Or1(TwoRegisters),
     Xor1(TwoRegisters),
+
+    Call(TwoRegisters),
+    Return,
+}
+
+pub enum NumericLogical1 {
+    Add(TwoRegisters),
+    Subtract(TwoRegisters),
+}
+
+impl NumericLogical1 {
+    fn eval(&self) -> Box<dyn FnOnce(u16, u16) -> Option<u16>> {
+        use NumericLogical1::*;
+        Box::new(match *self {
+            Add(grs) => u16::checked_add,
+            Subtract(_) => u16::checked_sub,
+        })
+    }
+}
+
+pub enum LogicalBitwise1 {
+    And(TwoRegisters),
+    Or(TwoRegisters),
+    Xor(TwoRegisters),
+}
+
+impl LogicalBitwise1 {
+    fn eval(&self) -> Box<dyn FnOnce(u16, u16) -> u16> {
+        use std::ops;
+        use LogicalBitwise1::*;
+        Box::new(match *self {
+            And(_) => ops::BitAnd::bitand,
+            Or(_) => ops::BitOr::bitor,
+            Xor(_) => ops::BitXor::bitxor,
+        })
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -35,10 +71,25 @@ pub enum NewError {
 impl Operations {
     pub fn new(word: u16) -> Result<Operations, NewError> {
         use Operations::*;
+
+        // TODO オペランドの形違いに対応する
+        let two_registers = TwoRegisters::new(word);
         Ok(match word & 0xff00 {
-            0 => NoOperation,                                   // NOP
-            0x1400 => Load1(TwoRegisters::new(word)?),          // LD
-            0x2400 => AddArithmetic1(TwoRegisters::new(word)?), // ADDA
+            0 => NoOperation, // NOP
+            0x1000 => Load2(two_registers?),
+            0x1400 => Load1(two_registers?),          // LD
+            0x2400 => AddArithmetic1(two_registers?), // ADDA
+            0x2500 => SubtractArithmetic1(two_registers?),
+            0x2600 => AddLogical1(two_registers?),
+            0x2700 => SubtractLogical1(two_registers?),
+
+            0x3400 => And1(two_registers?),
+            0x3500 => Or1(two_registers?),
+            0x3600 => Xor1(two_registers?),
+
+            0x8000 => Call(two_registers?),
+            0x8100 => Return,
+
             e => Err(NewError::OperationNotDefined(e))?,
         })
     }
@@ -88,6 +139,4 @@ mod test {
 
     //     Ok(())
     // }
-
-   
 }
