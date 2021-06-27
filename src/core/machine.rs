@@ -1,5 +1,6 @@
 use super::memory;
 use super::operations::TwoWordOperations;
+use super::register::GeneralRegister;
 use super::{memory::Memory, operations, operations::Operations};
 use std::ops::{BitAnd, BitOr, BitXor};
 use std::rc::Rc;
@@ -12,7 +13,7 @@ pub const STACK_SIZE: usize = 256;
 pub struct Machine {
     /// メモリ。`Rc` で共有したほうがメモリの節約になるのかもしれないという思いがある
     pub mem: Rc<Memory>,
-    gr: [u16; 8],
+    gr: GeneralRegister,
     sp: u16,
     pr: u16,
     of: bool,
@@ -45,7 +46,7 @@ impl Machine {
         println!("v:{:X}", mem.0[STACK_SIZE]);
         Ok(Machine {
             mem,
-            gr: [0; 8],
+            gr: GeneralRegister::new([0; 8]),
             sp: STACK_SIZE as u16,
             pr: STACK_SIZE as u16,
             of: false,
@@ -75,14 +76,15 @@ impl Machine {
                     // TODO 処理が分散してて汚い
                     let (_, &index_gr_num) = tr.get_pair();
 
-                    let adr = word + self.gr[index_gr_num as usize];
+                    let adr = word + self.gr.index(tr);
                     self.load2(tr, adr)
                 }
                 Push(tr) => {
+                    let (_, offset) = self.gr.get(tr);
                     let (_, &index) = tr.get_pair();
                     let sp = self.sp - 1;
                     let mut mem = self.mem.0.clone();
-                    mem[self.sp as usize] = word + self.gr[index as usize];
+                    mem[self.sp as usize] = word + offset;
                     let mem = Rc::new(Memory(mem));
                     Machine {
                         sp,
@@ -92,8 +94,8 @@ impl Machine {
                 }
 
                 Call(tr) => {
-                    let (_, &index_gr_num) = tr.get_pair();
-                    let adr = word + self.gr[index_gr_num as usize];
+                    let (_, xv) = self.gr.get(tr);
+                    let adr = word + xv;
                     self.call(adr)
                 }
                 _ => unimplemented!(),
@@ -116,7 +118,7 @@ impl Machine {
                 let sp = self.sp + 1;
                 Machine {
                     sp,
-                    ..self.set_gene(tr, r)
+                    ..self.mod_gr(tr, r)
                 }
             }
             Return => self.return_(),
@@ -165,42 +167,18 @@ impl Machine {
 }
 
 impl Machine {
-    fn get_gr(&self, index: u16) -> Result<&u16, u16> {
-        self.gr.get(index as usize).ok_or(index)
-    }
-
-    /// `TwoRegisters` を使ってGRにアクセスする。
-    fn get_grs(&self, two_registers: operations::TwoRegisters) -> (&u16, &u16) {
-        let (&r1, &r2) = two_registers.get_pair();
-        (self.get_gr(r1).unwrap(), self.get_gr(r2).unwrap())
-    }
-
-    pub fn set_gr(&self, two_registers: operations::TwoRegisters, new_r1_value: u16) -> [u16; 8] {
-        let (&r1_index, _) = two_registers.get_pair();
-
-        let mut gr = self.gr.clone();
-
-        gr[r1_index as usize] = new_r1_value;
-
-        gr
-    }
-
-    fn set_gene(&self, two_registers: operations::TwoRegisters, r1_value: u16) -> Machine {
-        let gr = self.set_gr(two_registers, r1_value);
-
-        Machine {
-            gr,
-            mem: Rc::clone(&self.mem),
-            ..*self
-        }
+    fn mod_gr(&self, two_registers: operations::TwoRegisters, r1_value: u16) -> Machine {
+        let gr = self.gr.set(two_registers, r1_value);
+        Machine { gr, ..self.clone() }
     }
 
     fn logical_1<F>(&self, two_registers: operations::TwoRegisters, f: F) -> Machine
     where
         F: FnOnce(u16, u16) -> Option<u16>,
     {
-        let (&r1, &r2) = self.get_grs(two_registers);
-        let machine = f(r1, r2).map_or(self.clone(), |r1| self.set_gene(two_registers, r1));
+        // TODO フラグレジスタ
+        let (r1, r2) = self.gr.get(two_registers);
+        let machine = f(r1, r2).map_or(self.clone(), |r1| self.mod_gr(two_registers, r1));
 
         machine
     }
@@ -230,7 +208,7 @@ pub struct MemoryAccessError(#[from] memory::GetError);
 
 impl Machine {
     fn load2(&self, two_registers: operations::TwoRegisters, adr: u16) -> Machine {
-        self.set_gene(two_registers, self.mem.get(adr).unwrap())
+        self.mod_gr(two_registers, self.mem.get(adr).unwrap())
     }
     fn call(&self, adr: u16) -> Machine {
         let sp = self.sp - 1;
