@@ -5,6 +5,7 @@ use crate::core::operations::Word1;
 use super::memory;
 use super::operations::{Operation2, RegisterNumber, Word2};
 use super::register::GeneralRegister;
+use super::utils::is_negative;
 use super::{memory::Memory, operations, operations::Operation1};
 use std::rc::Rc;
 use std::{cmp, io};
@@ -101,7 +102,7 @@ impl Machine {
             return Ok(match operation {
                 Load => {
                     let Values2 { mem_value, .. } = self.access2(r, x, word).unwrap();
-                    self.mod_gr(r, mem_value)
+                    self.mod_gr(r, mem_value).set_sf_zf(mem_value)
                 }
                 Store => {
                     let Values2 {
@@ -116,6 +117,70 @@ impl Machine {
                         ..self.clone()
                     }
                 }
+
+                LoadAddress => {
+                    let Values2 { effective_addr, .. } = self.access2(r, x, word).unwrap();
+                    self.mod_gr(r, effective_addr)
+                }
+
+                AddLogical => {
+                    let Values2 {
+                        r: r_value,
+                        mem_value,
+                        ..
+                    } = self.access2(r, x, word).unwrap();
+
+                    let r_value = r_value + mem_value;
+
+                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                }
+
+                SubtractLogical => {
+                    let Values2 {
+                        r: r_value,
+                        mem_value,
+                        ..
+                    } = self.access2(r, x, word).unwrap();
+
+                    let r_value = r_value - mem_value;
+
+                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                }
+
+                Or => {
+                    let Values2 {
+                        r: r_value,
+                        mem_value,
+                        ..
+                    } = self.access2(r, x, word).unwrap();
+
+                    let r_value = r_value | mem_value;
+
+                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                }
+                And => {
+                    let Values2 {
+                        r: r_value,
+                        mem_value,
+                        ..
+                    } = self.access2(r, x, word).unwrap();
+
+                    let r_value = r_value & mem_value;
+
+                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                }
+                Xor => {
+                    let Values2 {
+                        r: r_value,
+                        mem_value,
+                        ..
+                    } = self.access2(r, x, word).unwrap();
+
+                    let r_value = r_value ^ mem_value;
+
+                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                }
+
                 Push => {
                     let Values2 { effective_addr, .. } = self.access2(r, x, word).unwrap();
 
@@ -234,6 +299,15 @@ impl Machine {
 }
 
 impl Machine {
+    fn set_sf_zf(&self, value: u16) -> Machine {
+        let sf = is_negative(value);
+        let zf = value == 0;
+        Machine {
+            sf,
+            zf,
+            ..self.clone()
+        }
+    }
     fn mod_gr(&self, r1: RegisterNumber, r1_value: u16) -> Machine {
         let gr = self.gr.set(r1, r1_value);
         Machine { gr, ..self.clone() }

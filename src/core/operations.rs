@@ -6,7 +6,11 @@ use itertools::Either;
 pub enum Operation2 {
     /// r <- (実効アドレス)
     Load,
+    /// - 実効アドレスの番地 <- rの値
+    /// - フラグ維持
     Store,
+    /// - rを実効アドレスに
+    /// - フラグ維持
     LoadAddress,
 
     AddArithmetic,
@@ -18,7 +22,9 @@ pub enum Operation2 {
     Or,
     Xor,
 
+    /// - OFは0
     CompareArithmetic,
+    /// - OFは0
     CompareLogical,
 
     ShiftLeftArithmetic,
@@ -26,15 +32,23 @@ pub enum Operation2 {
     ShiftRightArithmetic,
     ShiftRightLogical,
 
+    /// - フラグ維持
     JumpOnMinus,
+    /// - フラグ維持
     JumpOnNonZero,
+    /// - フラグ維持
     JumpOnZero,
+    /// - フラグ維持
     UnconditionalJump,
+    /// - フラグ維持
     JumpOnPlus,
+    /// - フラグ維持
     JumpOnOverflow,
 
+    /// - フラグ維持
     Push,
 
+    /// - フラグ維持
     Call,
 }
 
