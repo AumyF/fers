@@ -1,12 +1,13 @@
 use itertools::Either;
 
+use crate::core::operations::Word1;
+
 use super::memory;
-use super::operations::TwoWordOperations;
+use super::operations::{Operation2, RegisterNumber, Word2};
 use super::register::GeneralRegister;
-use super::{memory::Memory, operations, operations::Operations};
-use std::ops::{BitAnd, BitOr, BitXor};
+use super::{memory::Memory, operations, operations::Operation1};
 use std::rc::Rc;
-use std::{io, vec};
+use std::{cmp, io};
 
 /// プログラム開始時に確保されるスタックの大きさ (ワード数)。
 pub const STACK_SIZE: usize = 256;
@@ -22,7 +23,7 @@ pub struct Machine {
     sf: bool,
     zf: bool,
     /// 前の命令。アドレス関係で2ワード読む場合に前の命令が何だったか保持するのに使う
-    previous_word: Option<TwoWordOperations>,
+    previous_word: Option<Word2>,
 }
 
 impl Clone for Machine {
@@ -66,28 +67,63 @@ pub enum ExecError {
     OperationNotDefined(#[from] operations::NewError),
 }
 
+pub struct Values2 {
+    r: u16,
+    effective_addr: u16,
+    mem_value: u16,
+}
+
 impl Machine {
+    fn access2(
+        &self,
+        r: RegisterNumber,
+        x: RegisterNumber,
+        addr: u16,
+    ) -> Result<Values2, memory::GetError> {
+        let (r, x) = self.gr.get(r, x);
+        let effective_addr = addr + x;
+        let mem_value = self.mem.get(effective_addr)?;
+
+        Ok(Values2 {
+            r,
+            effective_addr,
+            mem_value,
+        })
+    }
     fn exec(&self, word: u16) -> Result<Machine, ExecError> {
-        use Operations::*;
+        use Operation1::*;
 
         // 2語目
-        if let Some(previous) = self.previous_word {
-            use TwoWordOperations::*;
-            return Ok(match previous {
-                Load(tr) => {
-                    // TODO 処理が分散してて汚い
-                    let (_, &index_gr_num) = tr.get_pair();
+        if let Some(Word2 { operation, r, x }) = self.previous_word {
+            use Operation2::*;
+            // TODO access2のエラー処理 たぶんエラー出る
 
-                    let adr = word + self.gr.index(tr);
-                    self.load2(tr, adr)
+            return Ok(match operation {
+                Load => {
+                    let Values2 { mem_value, .. } = self.access2(r, x, word).unwrap();
+                    self.mod_gr(r, mem_value)
                 }
-                Push(tr) => {
-                    // TODO 未整理
-                    let (_, offset) = self.gr.get(tr);
-                    let (_, &index) = tr.get_pair();
-                    let sp = self.sp - 1;
+                Store => {
+                    let Values2 {
+                        effective_addr, r, ..
+                    } = self.access2(r, x, word).unwrap();
+
                     let mut mem = self.mem.0.clone();
-                    mem[self.sp as usize] = word + offset;
+                    mem[effective_addr as usize] = r;
+                    let mem = Rc::new(Memory(mem));
+                    Machine {
+                        mem,
+                        ..self.clone()
+                    }
+                }
+                Push => {
+                    let Values2 { effective_addr, .. } = self.access2(r, x, word).unwrap();
+
+                    let mut mem = self.mem.0.clone();
+
+                    let sp = self.sp - 1;
+                    mem[self.sp as usize] = effective_addr;
+
                     let mem = Rc::new(Memory(mem));
                     Machine {
                         sp,
@@ -96,10 +132,22 @@ impl Machine {
                     }
                 }
 
-                Call(tr) => {
-                    let (_, xv) = self.gr.get(tr);
-                    let adr = word + xv;
-                    self.call(adr)
+                Call => {
+                    let Values2 { effective_addr, .. } = self.access2(r, x, word).unwrap();
+
+                    let mut mem = self.mem.0.clone();
+
+                    let sp = self.sp - 1;
+                    mem[sp as usize] = self.pr;
+
+                    let mem = Rc::new(Memory(mem));
+                    let pr = effective_addr;
+                    Machine {
+                        sp,
+                        mem,
+                        pr,
+                        ..self.clone()
+                    }
                 }
                 _ => unimplemented!(),
             });
@@ -107,20 +155,32 @@ impl Machine {
 
         // 1語目
         Ok(match operations::ope(word)? {
-            Either::Left(o) => match o {
+            Either::Left(Word1 { operation, r1, r2 }) => match operation {
                 NoOperation => self.clone(),
                 // AddArithmetic1(two_registers) => self.manipulate_gr(two_registers, |r1, r2| r1 + r2),
-                AddLogical1(two_registers) => self.add_logical_1(two_registers),
-                SubtractLogical1(tr) => self.subtract_logical_1(tr),
-                And1(tr) => self.and_1(tr),
-                Or1(two_registers) => self.or_1(two_registers),
-                Xor1(tr) => self.xor_1(tr),
-                Pop(tr) => {
+                AddLogical1 => self.add_logical_1(r1, r2),
+                SubtractLogical1 => self.subtract_logical_1(r1, r2),
+                And1 => self.and_1(r1, r2),
+                Or1 => self.or_1(r1, r2),
+                Xor1 => self.xor_1(r1, r2),
+
+                CompareArithmetic => {
+                    let (r1, r2) = self.gr.get_arithmetic(r1, r2);
+
+                    self.compare(r1, r2)
+                }
+                CompareLogical => {
+                    let (r1, r2) = self.gr.get(r1, r2);
+
+                    self.compare(r1, r2)
+                }
+
+                Pop => {
                     let r = self.mem.get(self.sp).unwrap();
                     let sp = self.sp + 1;
                     Machine {
                         sp,
-                        ..self.mod_gr(tr, r)
+                        ..self.mod_gr(r1, r)
                     }
                 }
                 Return => self.return_(),
@@ -174,38 +234,50 @@ impl Machine {
 }
 
 impl Machine {
-    fn mod_gr(&self, two_registers: operations::TwoRegisters, r1_value: u16) -> Machine {
-        let gr = self.gr.set(two_registers, r1_value);
+    fn mod_gr(&self, r1: RegisterNumber, r1_value: u16) -> Machine {
+        let gr = self.gr.set(r1, r1_value);
         Machine { gr, ..self.clone() }
     }
 
-    fn logical_1<F>(&self, two_registers: operations::TwoRegisters, f: F) -> Machine
+    fn logical_1<F>(&self, r1_n: RegisterNumber, r2: RegisterNumber, f: F) -> Machine
     where
         F: FnOnce(u16, u16) -> Option<u16>,
     {
         // TODO フラグレジスタ
-        let (r1, r2) = self.gr.get(two_registers);
-        let machine = f(r1, r2).map_or(self.clone(), |r1| self.mod_gr(two_registers, r1));
+        let (r1, r2) = self.gr.get(r1_n, r2);
+        let machine = f(r1, r2).map_or_else(|| self.clone(), |r1| self.mod_gr(r1_n, r1));
 
         machine
     }
 
-    pub fn add_logical_1(&self, two_registers: operations::TwoRegisters) -> Machine {
-        self.logical_1(two_registers, u16::checked_add)
+    pub fn add_logical_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
+        self.logical_1(r1, r2, u16::checked_add)
     }
 
-    pub fn subtract_logical_1(&self, two_registers: operations::TwoRegisters) -> Machine {
-        self.logical_1(two_registers, u16::checked_sub)
+    pub fn subtract_logical_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
+        self.logical_1(r1, r2, u16::checked_sub)
     }
 
-    pub fn and_1(&self, two_registers: operations::TwoRegisters) -> Machine {
-        self.logical_1(two_registers, |r1, r2| Some(r1 & r2))
+    pub fn and_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
+        self.logical_1(r1, r2, |r1, r2| Some(r1 & r2))
     }
-    pub fn or_1(&self, two_registers: operations::TwoRegisters) -> Machine {
-        self.logical_1(two_registers, |r1, r2| Some(r1 | r2))
+    pub fn or_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
+        self.logical_1(r1, r2, |r1, r2| Some(r1 | r2))
     }
-    pub fn xor_1(&self, two_registers: operations::TwoRegisters) -> Machine {
-        self.logical_1(two_registers, |r1, r2| Some(r1 ^ r2))
+    pub fn xor_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
+        self.logical_1(r1, r2, |r1, r2| Some(r1 ^ r2))
+    }
+    pub fn compare<T: cmp::Ord>(&self, a: T, b: T) -> Machine {
+        let (sf, zf) = match a.cmp(&b) {
+            cmp::Ordering::Greater => (false, false),
+            cmp::Ordering::Equal => (false, true),
+            cmp::Ordering::Less => (true, false),
+        };
+        Machine {
+            sf,
+            zf,
+            ..self.clone()
+        }
     }
 }
 
@@ -214,24 +286,6 @@ impl Machine {
 pub struct MemoryAccessError(#[from] memory::GetError);
 
 impl Machine {
-    fn load2(&self, two_registers: operations::TwoRegisters, adr: u16) -> Machine {
-        self.mod_gr(two_registers, self.mem.get(adr).unwrap())
-    }
-    fn call(&self, adr: u16) -> Machine {
-        let sp = self.sp - 1;
-        // TODO メモリ操作が荒い
-        let mut mem = self.mem.0.clone();
-        mem[sp as usize] = self.pr;
-        let mem = Rc::new(Memory(mem));
-        let pr = adr;
-
-        Machine {
-            sp,
-            mem,
-            pr,
-            ..self.clone()
-        }
-    }
     fn return_(&self) -> Machine {
         // TODO resultにする
         let pr = self.mem.get(self.sp).unwrap();

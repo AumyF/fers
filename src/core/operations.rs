@@ -3,66 +3,88 @@
 use itertools::Either;
 
 #[derive(Debug, Clone, Copy)]
-pub enum TwoWordOperations {
-    Load(TwoRegisters),
-    Store(TwoRegisters),
-    LoadAddress(TwoRegisters),
+pub enum Operation2 {
+    /// r <- (実効アドレス)
+    Load,
+    Store,
+    LoadAddress,
 
-    AddArithmetic(TwoRegisters),
-    SubtractArithmetic(TwoRegisters),
-    AddLogical(TwoRegisters),
-    SubtractLogical(TwoRegisters),
+    AddArithmetic,
+    SubtractArithmetic,
+    AddLogical,
+    SubtractLogical,
 
-    And(TwoRegisters),
-    Or(TwoRegisters),
-    Xor(TwoRegisters),
+    And,
+    Or,
+    Xor,
 
-    CompareArithmetic(TwoRegisters),
-    CompareLogical(TwoRegisters),
+    CompareArithmetic,
+    CompareLogical,
 
-    ShiftLeftArithmetic(TwoRegisters),
-    ShiftLeftLogical(TwoRegisters),
-    ShiftRightArithmetic(TwoRegisters),
-    ShiftRightLogical(TwoRegisters),
+    ShiftLeftArithmetic,
+    ShiftLeftLogical,
+    ShiftRightArithmetic,
+    ShiftRightLogical,
 
-    JumpOnMinus(TwoRegisters),
-    JumpOnNonZero(TwoRegisters),
-    JumpOnZero(TwoRegisters),
-    UnconditionalJump(TwoRegisters),
-    JumpOnPlus(TwoRegisters),
-    JumpOnOverflow(TwoRegisters),
+    JumpOnMinus,
+    JumpOnNonZero,
+    JumpOnZero,
+    UnconditionalJump,
+    JumpOnPlus,
+    JumpOnOverflow,
 
-    Push(TwoRegisters),
+    Push,
 
-    Call(TwoRegisters),
+    Call,
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Operations {
+pub enum Operation1 {
+    /// 何もしない
     NoOperation,
 
     /// r1にr2をセットする
-    Load1(TwoRegisters),
+    Load1,
 
-    AddArithmetic1(TwoRegisters),
-    SubtractArithmetic1(TwoRegisters),
-    AddLogical1(TwoRegisters),
-    SubtractLogical1(TwoRegisters),
+    AddArithmetic1,
+    SubtractArithmetic1,
+    AddLogical1,
+    SubtractLogical1,
 
-    And1(TwoRegisters),
-    Or1(TwoRegisters),
-    Xor1(TwoRegisters),
+    And1,
+    Or1,
+    Xor1,
 
-    CompareArithmetic1(TwoRegisters),
-    CompareLogical1(TwoRegisters),
+    /// r1 > r2 のときsf=0, zf=0\
+    /// r1 = r2 のときsf=0, zf=1\
+    /// r1 < r2 のときsf=1, zf=0
+    CompareArithmetic,
+    /// r1 > r2 のときsf=0, zf=0\
+    /// r1 = r2 のときsf=0, zf=1\
+    /// r1 < r2 のときsf=1, zf=0
+    CompareLogical,
 
-    Pop(TwoRegisters),
+    Pop,
 
     Return,
 }
 
-pub fn ope(word: u16) -> Result<Either<Operations, TwoWordOperations>, NewError> {
-    Ok(Operations::new(word).map_or(Either::Right(TwoWordOperations::new(word)?), Either::Left))
+pub fn ope(word: u16) -> Result<Either<Word1, Word2>, NewError> {
+    let (r1_r, r2_x) = RegisterNumber::new_pair(word);
+    Ok(Operation1::new(word).map_or(
+        Either::Right(Word2 {
+            operation: Operation2::new(word)?,
+            r: r1_r,
+            x: r2_x,
+        }),
+        |operation| {
+            Either::Left(Word1 {
+                operation,
+                r1: r1_r,
+                r2: r2_x,
+            })
+        },
+    ))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -73,25 +95,39 @@ pub enum NewError {
     RegisterOutOfIndex(#[from] RegisterOutOfIndex),
 }
 
-impl Operations {
-    pub fn new(word: u16) -> Result<Operations, NewError> {
-        use Operations::*;
+pub struct Word1 {
+    pub operation: Operation1,
+    pub r1: RegisterNumber,
+    pub r2: RegisterNumber,
+}
 
-        // TODO オペランドの形違いに対応する
-        let two_registers = TwoRegisters::new(word);
+#[derive(Debug, Clone, Copy)]
+pub struct Word2 {
+    pub operation: Operation2,
+    pub r: RegisterNumber,
+    pub x: RegisterNumber,
+}
+
+impl Operation1 {
+    pub fn new(word: u16) -> Result<Operation1, NewError> {
+        use Operation1::*;
+
         Ok(match word & 0xff00 {
-            0 => NoOperation,                         // NOP
-            0x1400 => Load1(two_registers?),          // LD
-            0x2400 => AddArithmetic1(two_registers?), // ADDA
-            0x2500 => SubtractArithmetic1(two_registers?),
-            0x2600 => AddLogical1(two_registers?),
-            0x2700 => SubtractLogical1(two_registers?),
+            0 => NoOperation,         // NOP
+            0x1400 => Load1,          // LD
+            0x2400 => AddArithmetic1, // ADDA
+            0x2500 => SubtractArithmetic1,
+            0x2600 => AddLogical1,
+            0x2700 => SubtractLogical1,
 
-            0x3400 => And1(two_registers?),
-            0x3500 => Or1(two_registers?),
-            0x3600 => Xor1(two_registers?),
+            0x3400 => And1,
+            0x3500 => Or1,
+            0x3600 => Xor1,
 
-            0x7100 => Pop(two_registers?),
+            0x4400 => CompareArithmetic,
+            0x4500 => CompareLogical,
+
+            0x7100 => Pop,
 
             0x8100 => Return,
 
@@ -100,42 +136,41 @@ impl Operations {
     }
 }
 
-impl TwoWordOperations {
-    pub fn new(word: u16) -> Result<TwoWordOperations, NewError> {
-        use TwoWordOperations::*;
+impl Operation2 {
+    pub fn new(word: u16) -> Result<Operation2, NewError> {
+        use Operation2::*;
 
-        let two_registers = TwoRegisters::new(word)?;
         Ok(match word & 0xff00 {
-            0x1000 => Load(two_registers),
-            0x1100 => Store(two_registers),
-            0x1200 => LoadAddress(two_registers),
+            0x1000 => Load,
+            0x1100 => Store,
+            0x1200 => LoadAddress,
 
-            0x2000 => AddArithmetic(two_registers),
-            0x2100 => SubtractArithmetic(two_registers),
-            0x2200 => AddLogical(two_registers),
-            0x2300 => SubtractLogical(two_registers),
+            0x2000 => AddArithmetic,
+            0x2100 => SubtractArithmetic,
+            0x2200 => AddLogical,
+            0x2300 => SubtractLogical,
 
-            0x3000 => And(two_registers),
-            0x3100 => Or(two_registers),
-            0x3200 => Xor(two_registers),
+            0x3000 => And,
+            0x3100 => Or,
+            0x3200 => Xor,
 
-            0x4000 => CompareArithmetic(two_registers),
-            0x4100 => CompareLogical(two_registers),
+            0x4000 => CompareArithmetic,
+            0x4100 => CompareLogical,
 
-            0x5000 => ShiftLeftArithmetic(two_registers),
-            0x5100 => ShiftLeftLogical(two_registers),
-            0x5200 => ShiftRightArithmetic(two_registers),
-            0x5300 => ShiftRightLogical(two_registers),
+            0x5000 => ShiftLeftArithmetic,
+            0x5100 => ShiftLeftLogical,
+            0x5200 => ShiftRightArithmetic,
+            0x5300 => ShiftRightLogical,
 
-            0x6100 => JumpOnMinus(two_registers),
-            0x6200 => JumpOnNonZero(two_registers),
-            0x6300 => JumpOnZero(two_registers),
-            0x6400 => UnconditionalJump(two_registers),
-            0x6500 => JumpOnPlus(two_registers),
-            0x6600 => JumpOnOverflow(two_registers),
+            0x6100 => JumpOnMinus,
+            0x6200 => JumpOnNonZero,
+            0x6300 => JumpOnZero,
+            0x6400 => UnconditionalJump,
+            0x6500 => JumpOnPlus,
+            0x6600 => JumpOnOverflow,
 
-            0x7000 => Push(two_registers),
-            0x8000 => Call(two_registers),
+            0x7000 => Push,
+            0x8000 => Call,
 
             e => Err(NewError::OperationNotDefined(e))?,
         })
@@ -151,20 +186,26 @@ pub struct TwoRegisters {
     r2: u16,
 }
 
+/// GRの番号．0~7の保証付き．
+#[derive(Debug, Clone, Copy)]
+pub struct RegisterNumber(pub u8);
+
+impl RegisterNumber {
+    pub fn new(n: u16) -> RegisterNumber {
+        RegisterNumber(n as u8)
+    }
+    pub fn new_pair(word: u16) -> (RegisterNumber, RegisterNumber) {
+        let r1_r = (word & 0x00f0) >> 1;
+        let r2_x = word & 0x000f;
+        (RegisterNumber::new(r1_r), RegisterNumber::new(r2_x))
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
-#[error("{0:X}{1:X} is out of range for general register")]
-pub struct RegisterOutOfIndex(u16, u16);
+#[error("{0:X} is out of range for general register")]
+pub struct RegisterOutOfIndex(u16);
 
 impl TwoRegisters {
-    fn new(word: u16) -> Result<TwoRegisters, RegisterOutOfIndex> {
-        let r1 = (word & 0x00f0) >> 1;
-        let r2 = word & 0x000f;
-        if r1 > 7 || r2 > 7 {
-            Err(RegisterOutOfIndex(r1, r2))
-        } else {
-            Ok(TwoRegisters { r1, r2 })
-        }
-    }
     pub fn get_pair(&self) -> (&u16, &u16) {
         let Self { r1, r2 } = self;
         (r1, r2)

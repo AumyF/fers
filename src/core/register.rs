@@ -1,4 +1,4 @@
-use super::operations::TwoRegisters;
+use super::operations::{RegisterNumber, TwoRegisters};
 
 #[derive(Debug, Clone, Copy)]
 pub struct GeneralRegister([u16; 8]);
@@ -8,20 +8,35 @@ impl GeneralRegister {
         GeneralRegister(gr)
     }
     /// インデックスレジスタ
-    pub fn index(&self, two: TwoRegisters) -> u16 {
+    pub fn index(&self, two: TwoRegisters) -> IndexRegister {
         let (_, &num_of_index_register) = two.get_pair();
-        self.0[num_of_index_register as usize]
+        IndexRegister(self.0[num_of_index_register as usize])
     }
 
-    pub fn get(&self, tw: TwoRegisters) -> (u16, u16) {
-        let (&r1_r, &r2_x) = tw.get_pair();
-        (self.0[r1_r as usize], self.0[r2_x as usize])
+    pub fn get(&self, r1: RegisterNumber, r2: RegisterNumber) -> (u16, u16) {
+        (self.0[r1.0 as usize], self.0[r2.0 as usize])
     }
 
-    pub fn set(&self, tw: TwoRegisters, r1_value: u16) -> GeneralRegister {
+    /// 値をi16 (符号つき) として扱う．arithmeticな演算で使う
+    pub fn get_arithmetic(&self, r1: RegisterNumber, r2: RegisterNumber) -> (i16, i16) {
+        (self.0[r1.0 as usize] as i16, self.0[r2.0 as usize] as i16)
+    }
+
+    pub fn set(&self, r1: RegisterNumber, r1_value: u16) -> GeneralRegister {
         let mut gr = self.0;
-        let (&r1_i, _) = tw.get_pair();
-        gr[r1_i as usize] = r1_value;
+        gr[r1.0 as usize] = r1_value;
         GeneralRegister(gr)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct IndexRegister(u16);
+
+impl IndexRegister {
+    pub fn new(gr: u16) -> IndexRegister {
+        IndexRegister(gr)
+    }
+    pub fn value(&self) -> u16 {
+        self.0
     }
 }
