@@ -30,6 +30,7 @@ pub trait ToPairBlanket: Iterator {
     }
 }
 
+#[cfg(test)]
 mod test {
     use super::ToPairBlanket;
     #[test]

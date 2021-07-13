@@ -18,9 +18,3 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("{}", machine.mem.info());
     Ok(())
 }
-
-#[test]
-fn t() {
-    assert_eq!(-1i8 as u8, 255);
-    assert_eq!(255u8 as i8, -1);
-}

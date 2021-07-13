@@ -226,6 +226,7 @@ impl TwoRegisters {
     }
 }
 
+#[cfg(test)]
 mod test {
     use std::{error, io};
 
