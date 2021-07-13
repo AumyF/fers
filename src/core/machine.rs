@@ -7,6 +7,7 @@ use super::operations::{Operation2, RegisterNumber, Word2};
 use super::register::GeneralRegister;
 use super::utils::is_negative;
 use super::{memory::Memory, operations, operations::Operation1};
+use std::ops;
 use std::rc::Rc;
 use std::{cmp, io};
 
@@ -75,6 +76,10 @@ pub struct Values2 {
 }
 
 impl Machine {
+    fn get_effective_value(&self, x: RegisterNumber, addr: u16) -> u16 {
+        let (_, x) = self.gr.get(x, x);
+        addr + x
+    }
     fn access2(
         &self,
         r: RegisterNumber,
@@ -130,9 +135,12 @@ impl Machine {
                         ..
                     } = self.access2(r, x, word).unwrap();
 
-                    let r_value = r_value + mem_value;
+                    let (r_value, of) = r_value.overflowing_add(mem_value);
 
-                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                    Machine {
+                        of,
+                        ..self.mod_gr(r, r_value).set_sf_zf(r_value)
+                    }
                 }
 
                 SubtractLogical => {
@@ -142,9 +150,12 @@ impl Machine {
                         ..
                     } = self.access2(r, x, word).unwrap();
 
-                    let r_value = r_value - mem_value;
+                    let (r_value, of) = r_value.overflowing_sub(mem_value);
 
-                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                    Machine {
+                        of,
+                        ..self.mod_gr(r, r_value).set_sf_zf(r_value)
+                    }
                 }
 
                 Or => {
@@ -180,6 +191,14 @@ impl Machine {
 
                     self.mod_gr(r, r_value).set_sf_zf(r_value)
                 }
+
+                JumpOnPlus => self.jump(x, word, self.sf == false && self.zf == false),
+
+                JumpOnMinus => self.jump(x, word, self.sf == true),
+                JumpOnNonZero => self.jump(x, word, self.zf == false),
+                JumpOnZero => self.jump(x, word, self.zf == true),
+                JumpOnOverflow => self.jump(x, word, self.of == true),
+                UnconditionalJump => self.jump(x, word, true),
 
                 Push => {
                     let Values2 { effective_addr, .. } = self.access2(r, x, word).unwrap();
@@ -299,6 +318,18 @@ impl Machine {
 }
 
 impl Machine {
+    fn jump(&self, x: RegisterNumber, addr: u16, cond: bool) -> Machine {
+        let effective_addr = self.get_effective_value(x, addr);
+
+        if cond {
+            Machine {
+                pr: effective_addr,
+                ..self.clone()
+            }
+        } else {
+            self.clone()
+        }
+    }
     fn set_sf_zf(&self, value: u16) -> Machine {
         let sf = is_negative(value);
         let zf = value == 0;
@@ -313,33 +344,44 @@ impl Machine {
         Machine { gr, ..self.clone() }
     }
 
-    fn logical_1<F>(&self, r1_n: RegisterNumber, r2: RegisterNumber, f: F) -> Machine
+    fn logical_1<F>(&self, r1: RegisterNumber, r2: RegisterNumber, f: F) -> Machine
     where
-        F: FnOnce(u16, u16) -> Option<u16>,
+        F: FnOnce(u16, u16) -> (u16, bool),
     {
         // TODO フラグレジスタ
-        let (r1, r2) = self.gr.get(r1_n, r2);
-        let machine = f(r1, r2).map_or_else(|| self.clone(), |r1| self.mod_gr(r1_n, r1));
+        let (r1_v, r2_v) = self.gr.get(r1, r2);
+        let (r1_v, of) = f(r1_v, r2_v);
 
-        machine
+        Machine {
+            of,
+            ..self.mod_gr(r1, r1_v).set_sf_zf(r1_v)
+        }
     }
 
     pub fn add_logical_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
-        self.logical_1(r1, r2, u16::checked_add)
+        self.logical_1(r1, r2, u16::overflowing_add)
     }
 
     pub fn subtract_logical_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
-        self.logical_1(r1, r2, u16::checked_sub)
+        self.logical_1(r1, r2, u16::overflowing_sub)
+    }
+
+    fn bit_1<F>(&self, r1: RegisterNumber, r2: RegisterNumber, f: F) -> Machine
+    where
+        F: FnOnce(u16, u16) -> u16,
+    {
+        let (r1_v, r2_v) = self.gr.get(r1, r2);
+        self.mod_gr(r1, f(r1_v, r2_v))
     }
 
     pub fn and_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
-        self.logical_1(r1, r2, |r1, r2| Some(r1 & r2))
+        self.bit_1(r1, r2, ops::BitAnd::bitand)
     }
     pub fn or_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
-        self.logical_1(r1, r2, |r1, r2| Some(r1 | r2))
+        self.bit_1(r1, r2, ops::BitOr::bitor)
     }
     pub fn xor_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
-        self.logical_1(r1, r2, |r1, r2| Some(r1 ^ r2))
+        self.bit_1(r1, r2, ops::BitXor::bitxor)
     }
     pub fn compare<T: cmp::Ord>(&self, a: T, b: T) -> Machine {
         let (sf, zf) = match a.cmp(&b) {
