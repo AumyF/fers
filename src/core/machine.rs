@@ -192,13 +192,12 @@ impl Machine {
                     self.mod_gr(r, r_value).set_sf_zf(r_value)
                 }
 
-                JumpOnPlus => self.jump(x, word, self.sf == false && self.zf == false),
-
-                JumpOnMinus => self.jump(x, word, self.sf == true),
-                JumpOnNonZero => self.jump(x, word, self.zf == false),
-                JumpOnZero => self.jump(x, word, self.zf == true),
-                JumpOnOverflow => self.jump(x, word, self.of == true),
-                UnconditionalJump => self.jump(x, word, true),
+                JumpOnPlus => self.jump_to(x, word, self.sf == false && self.zf == false),
+                JumpOnMinus => self.jump_to(x, word, self.sf == true),
+                JumpOnNonZero => self.jump_to(x, word, self.zf == false),
+                JumpOnZero => self.jump_to(x, word, self.zf == true),
+                JumpOnOverflow => self.jump_to(x, word, self.of == true),
+                UnconditionalJump => self.jump_to(x, word, true),
 
                 Push => {
                     let Values2 { effective_addr, .. } = self.access2(r, x, word).unwrap();
@@ -318,7 +317,7 @@ impl Machine {
 }
 
 impl Machine {
-    fn jump(&self, x: RegisterNumber, addr: u16, cond: bool) -> Machine {
+    fn jump_to(&self, x: RegisterNumber, addr: u16, cond: bool) -> Machine {
         let effective_addr = self.get_effective_value(x, addr);
 
         if cond {
