@@ -18,11 +18,11 @@ impl GeneralRegister {
     }
 
     pub fn get_pair(&self, r1: RegisterNumber, r2: RegisterNumber) -> (u16, u16) {
-        (self.0[r1.0 as usize], self.0[r2.0 as usize])
+        (self.get(r1), self.get(r2))
     }
 
     /// 値をi16 (符号つき) として扱う．arithmeticな演算で使う
-    pub fn get_arithmetic(&self, r1: RegisterNumber, r2: RegisterNumber) -> (i16, i16) {
+    pub fn get_pair_arithmetic(&self, r1: RegisterNumber, r2: RegisterNumber) -> (i16, i16) {
         (self.0[r1.0 as usize] as i16, self.0[r2.0 as usize] as i16)
     }
 

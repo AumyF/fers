@@ -222,22 +222,8 @@ impl Machine {
         Ok(match operations::ope(word)? {
             Either::Left(Word1 { operation, r1, r2 }) => match operation {
                 NoOperation => self.clone(),
-                AddArithmetic1 => {
-                    let (r1_value, r2_value) = self.gr.get_arithmetic(r1, r2);
-                    let (r1_value, of) = r1_value.overflowing_add(r2_value);
-                    Machine {
-                        of,
-                        ..self.mod_gr(r1, r1_value as u16).set_sf_zf(r1_value as u16)
-                    }
-                }
-                SubtractArithmetic1 => {
-                    let (r1_value, r2_value) = self.gr.get_arithmetic(r1, r2);
-                    let (r1_value, of) = r1_value.overflowing_sub(r2_value);
-                    Machine {
-                        of,
-                        ..self.mod_gr(r1, r1_value as u16).set_sf_zf(r1_value as u16)
-                    }
-                }
+                AddArithmetic1 => self.add_arithmetic_1(r1, r2),
+                SubtractArithmetic1 => self.subtract_arithmetic_1(r1, r2),
 
                 AddLogical1 => self.add_logical_1(r1, r2),
                 SubtractLogical1 => self.subtract_logical_1(r1, r2),
@@ -245,25 +231,10 @@ impl Machine {
                 Or1 => self.or_1(r1, r2),
                 Xor1 => self.xor_1(r1, r2),
 
-                CompareArithmetic => {
-                    let (r1, r2) = self.gr.get_arithmetic(r1, r2);
+                CompareArithmetic => self.compare_arithmetic(r1, r2),
+                CompareLogical => self.compare_logical(r1, r2),
 
-                    self.compare(r1, r2)
-                }
-                CompareLogical => {
-                    let (r1, r2) = self.gr.get_pair(r1, r2);
-
-                    self.compare(r1, r2)
-                }
-
-                Pop => {
-                    let r = self.mem.get(self.sp).unwrap();
-                    let sp = self.sp + 1;
-                    Machine {
-                        sp,
-                        ..self.mod_gr(r1, r)
-                    }
-                }
+                Pop => self.pop(r1),
                 Return => self.return_(),
 
                 _ => unimplemented!(),
@@ -312,21 +283,13 @@ impl Machine {
             ..machine
         })
     }
-}
-
-impl Machine {
-    fn jump_to(&self, x: RegisterNumber, addr: u16, cond: bool) -> Machine {
-        let effective_addr = self.get_effective_value(x, addr);
-
-        if cond {
-            Machine {
-                pr: effective_addr,
-                ..self.clone()
-            }
-        } else {
-            self.clone()
-        }
+    /// 指定してレジスタの値を変更したMachineを返す
+    fn mod_gr(&self, r1: RegisterNumber, r1_value: u16) -> Machine {
+        let gr = self.gr.set(r1, r1_value);
+        Machine { gr, ..self.clone() }
     }
+
+    /// SF, ZFをセットしたMachineを返す
     fn set_sf_zf(&self, value: u16) -> Machine {
         let sf = is_negative(value);
         let zf = value == 0;
@@ -336,11 +299,9 @@ impl Machine {
             ..self.clone()
         }
     }
-    fn mod_gr(&self, r1: RegisterNumber, r1_value: u16) -> Machine {
-        let gr = self.gr.set(r1, r1_value);
-        Machine { gr, ..self.clone() }
-    }
+}
 
+impl Machine {
     fn logical_1<F>(&self, r1: RegisterNumber, r2: RegisterNumber, f: F) -> Machine
     where
         F: FnOnce(u16, u16) -> (u16, bool),
@@ -363,6 +324,28 @@ impl Machine {
         self.logical_1(r1, r2, u16::overflowing_sub)
     }
 
+    fn arithmetic_1<F>(&self, r1: RegisterNumber, r2: RegisterNumber, f: F) -> Machine
+    where
+        F: FnOnce(i16, i16) -> (i16, bool),
+    {
+        let (r1_v, r2_v) = self.gr.get_pair_arithmetic(r1, r2);
+        let (r1_v, of) = f(r1_v, r2_v);
+        let r1_v = r1_v as u16;
+
+        Machine {
+            of,
+            ..self.mod_gr(r1, r1_v).set_sf_zf(r1_v)
+        }
+    }
+
+    pub fn add_arithmetic_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
+        self.arithmetic_1(r1, r2, i16::overflowing_add)
+    }
+
+    pub fn subtract_arithmetic_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
+        self.arithmetic_1(r1, r2, i16::overflowing_sub)
+    }
+
     fn bit_1<F>(&self, r1: RegisterNumber, r2: RegisterNumber, f: F) -> Machine
     where
         F: FnOnce(u16, u16) -> u16,
@@ -380,6 +363,37 @@ impl Machine {
     pub fn xor_1(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
         self.bit_1(r1, r2, ops::BitXor::bitxor)
     }
+
+    pub fn pop(&self, r: RegisterNumber) -> Machine {
+        let r_value = self.mem.get(self.sp).unwrap();
+        let sp = self.sp + 1;
+        Machine {
+            sp,
+            ..self.mod_gr(r, r_value)
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("MemoryAccessError")]
+pub struct MemoryAccessError(#[from] memory::GetError);
+
+// 2ワード命令の実装
+
+impl Machine {
+    /// ジャンプする
+    fn jump_to(&self, x: RegisterNumber, addr: u16, cond: bool) -> Machine {
+        let effective_addr = self.get_effective_value(x, addr);
+
+        if cond {
+            Machine {
+                pr: effective_addr,
+                ..self.clone()
+            }
+        } else {
+            self.clone()
+        }
+    }
     pub fn compare<T: cmp::Ord>(&self, a: T, b: T) -> Machine {
         let (sf, zf) = match a.cmp(&b) {
             cmp::Ordering::Greater => (false, false),
@@ -392,13 +406,16 @@ impl Machine {
             ..self.clone()
         }
     }
-}
 
-#[derive(Debug, thiserror::Error)]
-#[error("MemoryAccessError")]
-pub struct MemoryAccessError(#[from] memory::GetError);
+    pub fn compare_arithmetic(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
+        let (r1, r2) = self.gr.get_pair_arithmetic(r1, r2);
+        self.compare(r1, r2)
+    }
+    pub fn compare_logical(&self, r1: RegisterNumber, r2: RegisterNumber) -> Machine {
+        let (r1, r2) = self.gr.get_pair(r1, r2);
+        self.compare(r1, r2)
+    }
 
-impl Machine {
     fn return_(&self) -> Machine {
         // TODO resultにする
         let pr = self.mem.get(self.sp).unwrap();
