@@ -158,6 +158,34 @@ impl Machine {
                     }
                 }
 
+                AddArithmetic => {
+                    let Values2 {
+                        r: r_value,
+                        mem_value,
+                        ..
+                    } = self.access2(r, x, word).unwrap();
+
+                    let (r_value, of) = (r_value as i16).overflowing_add(mem_value as i16);
+
+                    Machine {
+                        of,
+                        ..self.mod_gr(r, r_value as u16)
+                    }
+                }
+                SubtractArithmetic => {
+                    let Values2 {
+                        r: r_value,
+                        mem_value,
+                        ..
+                    } = self.access2(r, x, word).unwrap();
+
+                    let (r_value, of) = (r_value as i16).overflowing_sub(mem_value as i16);
+
+                    Machine {
+                        of,
+                        ..self.mod_gr(r, r_value as u16)
+                    }
+                }
                 Or => {
                     let Values2 {
                         r: r_value,
@@ -240,7 +268,23 @@ impl Machine {
         Ok(match operations::ope(word)? {
             Either::Left(Word1 { operation, r1, r2 }) => match operation {
                 NoOperation => self.clone(),
-                // AddArithmetic1(two_registers) => self.manipulate_gr(two_registers, |r1, r2| r1 + r2),
+                AddArithmetic1 => {
+                    let (r1_value, r2_value) = self.gr.get_arithmetic(r1, r2);
+                    let (r1_value, of) = r1_value.overflowing_add(r2_value);
+                    Machine {
+                        of,
+                        ..self.mod_gr(r1, r1_value as u16).set_sf_zf(r1_value as u16)
+                    }
+                }
+                SubtractArithmetic1 => {
+                    let (r1_value, r2_value) = self.gr.get_arithmetic(r1, r2);
+                    let (r1_value, of) = r1_value.overflowing_sub(r2_value);
+                    Machine {
+                        of,
+                        ..self.mod_gr(r1, r1_value as u16).set_sf_zf(r1_value as u16)
+                    }
+                }
+
                 AddLogical1 => self.add_logical_1(r1, r2),
                 SubtractLogical1 => self.subtract_logical_1(r1, r2),
                 And1 => self.and_1(r1, r2),
