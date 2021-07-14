@@ -67,52 +67,34 @@ impl Machine {
 pub enum ExecError {
     #[error("{0}")]
     OperationNotDefined(#[from] operations::NewError),
-}
-
-pub struct Values2 {
-    r: u16,
-    effective_addr: u16,
-    mem_value: u16,
+    #[error("{0}")]
+    MemoryGetError(#[from] memory::GetError),
 }
 
 impl Machine {
     fn get_effective_value(&self, x: RegisterNumber, addr: u16) -> u16 {
-        let (_, x) = self.gr.get(x, x);
+        let (_, x) = self.gr.get_pair(x, x);
         addr + x
     }
-    fn access2(
-        &self,
-        r: RegisterNumber,
-        x: RegisterNumber,
-        addr: u16,
-    ) -> Result<Values2, memory::GetError> {
-        let (r, x) = self.gr.get(r, x);
-        let effective_addr = addr + x;
-        let mem_value = self.mem.get(effective_addr)?;
 
-        Ok(Values2 {
-            r,
-            effective_addr,
-            mem_value,
-        })
-    }
     fn exec(&self, word: u16) -> Result<Machine, ExecError> {
         use Operation1::*;
 
-        // 2語目
+        // 2ワード命令の2語目部分に来ている
         if let Some(Word2 { operation, r, x }) = self.previous_word {
             use Operation2::*;
             // TODO access2のエラー処理 たぶんエラー出る
 
+            let set_gr = |value| self.mod_gr(r, value);
+            let effective_addr = self.get_effective_value(x, word);
+
             return Ok(match operation {
                 Load => {
-                    let Values2 { mem_value, .. } = self.access2(r, x, word).unwrap();
-                    self.mod_gr(r, mem_value).set_sf_zf(mem_value)
+                    let mem_value = self.mem.get(effective_addr)?;
+                    set_gr(mem_value).set_sf_zf(mem_value)
                 }
                 Store => {
-                    let Values2 {
-                        effective_addr, r, ..
-                    } = self.access2(r, x, word).unwrap();
+                    let r = self.gr.get(r);
 
                     let mut mem = self.mem.0.clone();
                     mem[effective_addr as usize] = r;
@@ -123,47 +105,35 @@ impl Machine {
                     }
                 }
 
-                LoadAddress => {
-                    let Values2 { effective_addr, .. } = self.access2(r, x, word).unwrap();
-                    self.mod_gr(r, effective_addr)
-                }
+                LoadAddress => set_gr(effective_addr),
 
                 AddLogical => {
-                    let Values2 {
-                        r: r_value,
-                        mem_value,
-                        ..
-                    } = self.access2(r, x, word).unwrap();
+                    let r_value = self.gr.get(r);
+                    let mem_value = self.mem.get(effective_addr)?;
 
                     let (r_value, of) = r_value.overflowing_add(mem_value);
 
                     Machine {
                         of,
-                        ..self.mod_gr(r, r_value).set_sf_zf(r_value)
+                        ..set_gr(r_value).set_sf_zf(r_value)
                     }
                 }
 
                 SubtractLogical => {
-                    let Values2 {
-                        r: r_value,
-                        mem_value,
-                        ..
-                    } = self.access2(r, x, word).unwrap();
+                    let r_value = self.gr.get(r);
+                    let mem_value = self.mem.get(effective_addr)?;
 
                     let (r_value, of) = r_value.overflowing_sub(mem_value);
 
                     Machine {
                         of,
-                        ..self.mod_gr(r, r_value).set_sf_zf(r_value)
+                        ..set_gr(r_value).set_sf_zf(r_value)
                     }
                 }
 
                 AddArithmetic => {
-                    let Values2 {
-                        r: r_value,
-                        mem_value,
-                        ..
-                    } = self.access2(r, x, word).unwrap();
+                    let r_value = self.gr.get(r);
+                    let mem_value = self.mem.get(effective_addr)?;
 
                     let (r_value, of) = (r_value as i16).overflowing_add(mem_value as i16);
 
@@ -173,11 +143,8 @@ impl Machine {
                     }
                 }
                 SubtractArithmetic => {
-                    let Values2 {
-                        r: r_value,
-                        mem_value,
-                        ..
-                    } = self.access2(r, x, word).unwrap();
+                    let r_value = self.gr.get(r);
+                    let mem_value = self.mem.get(effective_addr)?;
 
                     let (r_value, of) = (r_value as i16).overflowing_sub(mem_value as i16);
 
@@ -187,37 +154,28 @@ impl Machine {
                     }
                 }
                 Or => {
-                    let Values2 {
-                        r: r_value,
-                        mem_value,
-                        ..
-                    } = self.access2(r, x, word).unwrap();
+                    let r_value = self.gr.get(r);
+                    let mem_value = self.mem.get(effective_addr)?;
 
                     let r_value = r_value | mem_value;
 
-                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                    set_gr(r_value).set_sf_zf(r_value)
                 }
                 And => {
-                    let Values2 {
-                        r: r_value,
-                        mem_value,
-                        ..
-                    } = self.access2(r, x, word).unwrap();
+                    let r_value = self.gr.get(r);
+                    let mem_value = self.mem.get(effective_addr)?;
 
                     let r_value = r_value & mem_value;
 
-                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                    set_gr(r_value).set_sf_zf(r_value)
                 }
                 Xor => {
-                    let Values2 {
-                        r: r_value,
-                        mem_value,
-                        ..
-                    } = self.access2(r, x, word).unwrap();
+                    let r_value = self.gr.get(r);
+                    let mem_value = self.mem.get(effective_addr)?;
 
                     let r_value = r_value ^ mem_value;
 
-                    self.mod_gr(r, r_value).set_sf_zf(r_value)
+                    set_gr(r_value).set_sf_zf(r_value)
                 }
 
                 JumpOnPlus => self.jump_to(x, word, self.sf == false && self.zf == false),
@@ -228,8 +186,6 @@ impl Machine {
                 UnconditionalJump => self.jump_to(x, word, true),
 
                 Push => {
-                    let Values2 { effective_addr, .. } = self.access2(r, x, word).unwrap();
-
                     let mut mem = self.mem.0.clone();
 
                     let sp = self.sp - 1;
@@ -244,8 +200,6 @@ impl Machine {
                 }
 
                 Call => {
-                    let Values2 { effective_addr, .. } = self.access2(r, x, word).unwrap();
-
                     let mut mem = self.mem.0.clone();
 
                     let sp = self.sp - 1;
@@ -297,7 +251,7 @@ impl Machine {
                     self.compare(r1, r2)
                 }
                 CompareLogical => {
-                    let (r1, r2) = self.gr.get(r1, r2);
+                    let (r1, r2) = self.gr.get_pair(r1, r2);
 
                     self.compare(r1, r2)
                 }
@@ -392,7 +346,7 @@ impl Machine {
         F: FnOnce(u16, u16) -> (u16, bool),
     {
         // TODO フラグレジスタ
-        let (r1_v, r2_v) = self.gr.get(r1, r2);
+        let (r1_v, r2_v) = self.gr.get_pair(r1, r2);
         let (r1_v, of) = f(r1_v, r2_v);
 
         Machine {
@@ -413,7 +367,7 @@ impl Machine {
     where
         F: FnOnce(u16, u16) -> u16,
     {
-        let (r1_v, r2_v) = self.gr.get(r1, r2);
+        let (r1_v, r2_v) = self.gr.get_pair(r1, r2);
         self.mod_gr(r1, f(r1_v, r2_v))
     }
 

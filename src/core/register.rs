@@ -13,7 +13,11 @@ impl GeneralRegister {
         IndexRegister(self.0[num_of_index_register as usize])
     }
 
-    pub fn get(&self, r1: RegisterNumber, r2: RegisterNumber) -> (u16, u16) {
+    pub fn get(&self, r: RegisterNumber) -> u16 {
+        self.0[r.0 as usize]
+    }
+
+    pub fn get_pair(&self, r1: RegisterNumber, r2: RegisterNumber) -> (u16, u16) {
         (self.0[r1.0 as usize], self.0[r2.0 as usize])
     }
 
