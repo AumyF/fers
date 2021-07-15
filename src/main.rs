@@ -1,4 +1,5 @@
 use std::{error::Error, thread::sleep, time::Duration};
+mod casl;
 mod core;
 mod lib;
 mod utils;
